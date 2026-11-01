@@ -408,7 +408,12 @@ local function collect_ripgrep_async(old, roots, cfg, on_done)
 
   local chunks, n_chunks = {}, 0
   local match_count = 0
-  local last_update_ms = 0
+  -- Leading only: a progress line dropped inside the window is replaced by the next one.
+  local progress = require("lib.nvim.patterns.throttle").new(function()
+    vim.schedule(function()
+      h:update({ text = string.format("%d match(es) found…", match_count) })
+    end)
+  end, progress_throttle_ms(), { trailing = false })
 
   local proc = vim.system(
     args,
@@ -426,14 +431,7 @@ local function collect_ripgrep_async(old, roots, cfg, on_done)
         for _ in data:gmatch('"type":"match"') do
           match_count = match_count + 1
         end
-        local uv = vim.uv or vim.loop
-        local now = uv.now()
-        if now - last_update_ms >= progress_throttle_ms() then
-          last_update_ms = now
-          vim.schedule(function()
-            h:update({ text = string.format("%d match(es) found…", match_count) })
-          end)
-        end
+        progress.call()
       end,
     }),
     function(obj)
