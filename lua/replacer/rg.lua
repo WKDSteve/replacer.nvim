@@ -887,6 +887,44 @@ end
 -- Public entry
 --------------------------------------------------------------------------------
 
+---@class RP_SearchBackend
+---@field collect fun(old: string, roots: string[], cfg: RP_RG_Config): RP_Match[], RP_Error|nil
+---@field collect_async fun(old: string, roots: string[], cfg: RP_RG_Config, on_done: fun(items: RP_Match[]|nil, err: RP_Error|nil))
+
+---@internal
+--- One entry per search backend, keyed by what `pick_backend` returns. A third
+--- backend is one more entry here; the public functions below do not branch on
+--- backend names.
+---@type table<string, RP_SearchBackend>
+local BACKENDS = {
+  ripgrep = { collect = collect_ripgrep, collect_async = collect_ripgrep_async },
+  vimgrep = {
+    collect = function(old, roots, cfg)
+      return collect_vimgrep(old, roots, cfg), nil
+    end,
+    collect_async = collect_vimgrep_async,
+  },
+}
+
+---@internal
+--- The in-memory matches when `roots` is one modified, file-backed buffer (the
+--- disk would miss the unsaved edits), else nil.
+---@param old string
+---@param roots string[]
+---@param cfg RP_RG_Config
+---@return RP_Match[]|nil
+local function modified_buffer_matches(old, roots, cfg)
+  if #roots ~= 1 then
+    return nil
+  end
+  local modified, bufnr = is_buffer_modified(roots[1])
+  if not (modified and bufnr) then
+    return nil
+  end
+  notify.info("scanning modified buffer instead of disk")
+  return post_filter(collect_from_buffer(old, bufnr, cfg), cfg)
+end
+
 --- Collect matches for `old` under `roots` using the configured backend.
 --- Errors from the ripgrep backend are returned (not notified here) so the
 --- calling layer decides how to surface them — matches `M.collect_async`.
@@ -895,23 +933,11 @@ end
 ---@param cfg RP_RG_Config
 ---@return RP_Match[], RP_Error|nil
 function M.collect(old, roots, cfg)
-  -- Modified, file-backed single buffer: scan in-memory content.
-  if #roots == 1 then
-    local modified, bufnr = is_buffer_modified(roots[1])
-    if modified and bufnr then
-      notify.info("scanning modified buffer instead of disk")
-      return post_filter(collect_from_buffer(old, bufnr, cfg), cfg), nil
-    end
+  local buffered = modified_buffer_matches(old, roots, cfg)
+  if buffered then
+    return buffered, nil
   end
-
-  local backend = pick_backend(cfg)
-  local items, err
-  if backend == "ripgrep" then
-    items, err = collect_ripgrep(old, roots, cfg)
-  else
-    items = collect_vimgrep(old, roots, cfg)
-  end
-
+  local items, err = BACKENDS[pick_backend(cfg)].collect(old, roots, cfg)
   return post_filter(items, cfg), err
 end
 
@@ -926,33 +952,18 @@ end
 ---@param on_done fun(items: RP_Match[]|nil, err: RP_Error|nil)
 ---@return nil
 function M.collect_async(old, roots, cfg, on_done)
-  -- Modified, file-backed single buffer: scan in-memory content (sync).
-  if #roots == 1 then
-    local modified, bufnr = is_buffer_modified(roots[1])
-    if modified and bufnr then
-      notify.info("scanning modified buffer instead of disk")
-      on_done(post_filter(collect_from_buffer(old, bufnr, cfg), cfg), nil)
-      return
+  local buffered = modified_buffer_matches(old, roots, cfg)
+  if buffered then
+    on_done(buffered, nil)
+    return
+  end
+  BACKENDS[pick_backend(cfg)].collect_async(old, roots, cfg, function(items, err)
+    if err then
+      on_done(nil, err)
+    else
+      on_done(post_filter(items or {}, cfg), nil)
     end
-  end
-
-  if pick_backend(cfg) == "ripgrep" then
-    collect_ripgrep_async(old, roots, cfg, function(items, err)
-      if err then
-        on_done(nil, err)
-      else
-        on_done(post_filter(items or {}, cfg), nil)
-      end
-    end)
-  else
-    collect_vimgrep_async(old, roots, cfg, function(items, err)
-      if err then
-        on_done(nil, err)
-      else
-        on_done(post_filter(items or {}, cfg), nil)
-      end
-    end)
-  end
+  end)
 end
 
 --- Collect matches, invoking `on_batch(new_items)` incrementally as
@@ -971,17 +982,13 @@ end
 ---@param on_done fun(items: RP_Match[]|nil, err: RP_Error|nil)
 ---@return nil
 function M.collect_streaming(old, roots, cfg, on_batch, on_done)
-  if #roots == 1 then
-    local modified, bufnr = is_buffer_modified(roots[1])
-    if modified and bufnr then
-      notify.info("scanning modified buffer instead of disk")
-      local items = post_filter(collect_from_buffer(old, bufnr, cfg), cfg)
-      if #items > 0 then
-        on_batch(items)
-      end
-      on_done(items, nil)
-      return
+  local buffered = modified_buffer_matches(old, roots, cfg)
+  if buffered then
+    if #buffered > 0 then
+      on_batch(buffered)
     end
+    on_done(buffered, nil)
+    return
   end
 
   if pick_backend(cfg) ~= "ripgrep" or not vim.system then
