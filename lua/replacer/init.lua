@@ -49,6 +49,55 @@ function M.setup(opts)
 end
 
 --------------------------------------------------------------------------------
+-- Run end signal (User ReplacerDone)
+--------------------------------------------------------------------------------
+
+---Name of the `User` autocmd pattern fired exactly once when a `:Replace` run is
+---over, whatever way it ended. `args.data` is a `RP_RunEnd`.
+M.DONE_EVENT = "ReplacerDone"
+
+---@class RP_RunEnd
+---@field reason "applied"|"cancelled"|"no_matches"|"plan"|"quickfix"|"no_scope"|"no_picker"|"error"
+---@field applied boolean  true when at least one spot was written
+---@field files integer    files changed by this run (0 when nothing applied)
+---@field spots integer    spots changed by this run (0 when nothing applied)
+---@field old string       the searched text of the run
+---@field new string       the replacement of the run
+
+---@internal
+---Build the once-only `finish(reason, files, spots)` for one run. The first call
+---fires `User ReplacerDone`; later calls (a window close after the apply, a
+---callback reached twice) are ignored. Fired on a scheduled tick so the code
+---that ended the run unwinds first.
+---@param request RP_Request
+---@return fun(reason: string, files?: integer, spots?: integer)
+local function make_finish(request)
+  local ended = false
+  return function(reason, files, spots)
+    if ended then
+      return
+    end
+    ended = true
+    files, spots = files or 0, spots or 0
+    local data = {
+      reason = reason,
+      applied = spots > 0,
+      files = files,
+      spots = spots,
+      old = request.old or "",
+      new = request.new or "",
+    }
+    vim.schedule(function()
+      pcall(vim.api.nvim_exec_autocmds, "User", {
+        pattern = M.DONE_EVENT,
+        modeline = false,
+        data = data,
+      })
+    end)
+  end
+end
+
+--------------------------------------------------------------------------------
 -- Helpers
 --------------------------------------------------------------------------------
 
@@ -159,11 +208,21 @@ end
 ---@param cfg RP_Config
 ---@param single_file boolean
 ---@param items RP_Match[]
+---@param finish fun(reason: string, files?: integer, spots?: integer)
 ---@return nil
-local function dispatch(request, cfg, single_file, items)
+local function dispatch(request, cfg, single_file, items, finish)
   -- Plan-only path (dry-run / export). Never writes.
   if request.dry or (request.export and request.export ~= "") then
-    return plan(request, items, cfg)
+    plan(request, items, cfg)
+    finish("plan")
+    return
+  end
+
+  -- Everything this run wrote, summed over every apply (ALL, per-file, picker
+  -- actions, reopened pickers): reported by the end signal.
+  local sum_files, sum_spots = 0, 0
+  local function finish_applied()
+    finish(sum_spots > 0 and "applied" or "cancelled", sum_files, sum_spots)
   end
 
   -- Quickfix/loclist export: send the raw match list and open it. Never writes.
@@ -176,6 +235,7 @@ local function dispatch(request, cfg, single_file, items)
         request.to_loclist and "the location list" or "quickfix"
       )
     )
+    finish("quickfix")
     return
   end
 
@@ -216,6 +276,7 @@ local function dispatch(request, cfg, single_file, items)
     local function settled(files, spots)
       spots = spots + lsp_count
       final_files, final_spots = files, spots
+      sum_files, sum_spots = sum_files + files, sum_spots + spots
       pcall(function()
         require("replacer.history").add(request, { files = files, spots = spots })
       end)
@@ -253,10 +314,13 @@ local function dispatch(request, cfg, single_file, items)
       notify.error("no picker available — install fzf-lua or telescope.nvim")
       if on_close then
         vim.schedule(on_close)
+      else
+        finish("no_picker")
       end
       return
     end
-    local rstate = on_close and { on_close = on_close } or nil
+    -- The top-level picker session (no caller-supplied `on_close`) ends the run.
+    local rstate = { on_close = on_close or finish_applied }
     if engine == "fzf" then
       require("replacer.pickers.fzf").run(
         request.old,
@@ -294,6 +358,7 @@ local function dispatch(request, cfg, single_file, items)
         open_picker,
         function(files, spots)
           common.notify_result(files, spots, cfg)
+          finish_applied()
         end
       )
       return
@@ -317,10 +382,12 @@ local function dispatch(request, cfg, single_file, items)
         on_answer = function(yes)
           if not yes then
             messages.info(cfg, messages.fmt(cfg, "cancelled"))
+            finish("cancelled")
             return
           end
           apply_func(items, request.new, cfg.write_changes, function(files, spots)
             common.notify_result(files, spots, cfg)
+            finish_applied()
           end)
         end,
       })
@@ -329,6 +396,7 @@ local function dispatch(request, cfg, single_file, items)
 
     apply_func(items, request.new, cfg.write_changes, function(files, spots)
       common.notify_result(files, spots, cfg)
+      finish_applied()
     end)
     return
   end
@@ -365,11 +433,13 @@ function M.run(request, new_text, scope, all)
   ---@cast request RP_Request
 
   local cfg = effective_cfg(request)
+  local finish = make_finish(request)
 
   -- 1) Resolve scope (fall back to configured default when none was given).
   local scope_tok = (request.scope ~= "" and request.scope) or cfg.default_scope or "%"
   local roots, single_file = cmd_mod.resolve_scope(scope_tok)
   if not roots or #roots == 0 then
+    finish("no_scope")
     return -- resolve_scope already notified on edge cases
   end
   ---@cast roots string[]
@@ -384,11 +454,13 @@ function M.run(request, new_text, scope, all)
     local function on_collected(items, err)
       if err then
         notify.error(require("replacer.error").format(err))
+        finish("error")
         return
       end
       if not items or #items == 0 then
         local messages = require("replacer.messages")
         messages.info(cfg, messages.fmt(cfg, "no_matches"))
+        finish("no_matches")
         return
       end
       -- Optional post-collection filter (e.g. :Surround skipping already-wrapped
@@ -397,11 +469,12 @@ function M.run(request, new_text, scope, all)
         local kept = vim.tbl_filter(request.filter, items)
         if #kept == 0 then
           notify.info(request.filter_empty_msg or "no matches left after filtering")
+          finish("no_matches")
           return
         end
         items = kept
       end
-      dispatch(request, cfg, collect_single, items)
+      dispatch(request, cfg, collect_single, items, finish)
     end
 
     if cfg.stream then
@@ -424,6 +497,7 @@ function M.run(request, new_text, scope, all)
     gitfiles.list(start_dir, cfg._changed_only, function(files, top, failed_kinds)
       if not top then
         notify.warn("--changed: not inside a git repository")
+        finish("no_scope")
         return
       end
       if failed_kinds then
@@ -449,6 +523,7 @@ function M.run(request, new_text, scope, all)
       end
       if #filtered == 0 then
         notify.info("--changed: no changed files match the current scope")
+        finish("no_matches")
         return
       end
       collect(filtered, false)

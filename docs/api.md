@@ -59,6 +59,38 @@ require("replacer").run("old", "new", "cwd", false)
 `overrides` are per-run config values (the programmatic equivalent of the
 `--flags`); `filters` narrows which files are searched.
 
+### Run end: `User ReplacerDone`
+
+Every `run()` (and so every `:Replace` / `:ReplaceFNames`-style command that goes
+through it) fires `User ReplacerDone` exactly once when it is over, however it
+ended. For an interactive run that is the end of the picker session: every
+reopen, the apply and the apply-all confirmation included. `args.data`:
+
+| field     | meaning                                                                                      |
+| --------- | -------------------------------------------------------------------------------------------- |
+| `reason`  | `applied`, `cancelled`, `no_matches`, `plan`, `quickfix`, `no_scope`, `no_picker` or `error` |
+| `applied` | `true` when at least one spot was written                                                    |
+| `files`   | files changed by this run                                                                    |
+| `spots`   | spots changed by this run                                                                    |
+| `old`     | searched text                                                                                |
+| `new`     | replacement                                                                                  |
+
+```lua
+vim.api.nvim_create_autocmd("User", {
+  pattern = "ReplacerDone",
+  once = true,
+  callback = function(args)
+    if args.data.applied then
+      vim.notify(("replaced %d spot(s)"):format(args.data.spots))
+    end
+  end,
+})
+```
+
+The event is scheduled to a later tick, so the code that ended the run has
+unwound when the handler runs. A plugin that wants to react to its own
+`:Replace` arms a one-shot handler right before issuing the command.
+
 ## `require("replacer.config").get()`
 
 Returns a deep copy of the current effective configuration. Mutating the
