@@ -30,6 +30,8 @@ return {
   -- Dependencies (directory names) put on the runtimepath: $<NAME>_DIR, .deps/<name>, ../<name>,
   -- stdpath('data')/lazy/<name>.
   deps = { "lib.nvim", "ui.nvim" },
+  -- The child editor of the conformance check has no picker (telescope, fzf, snacks): that is its environment, not a fault.
+  conformance = { health_env = { "No picker" } },
   -- "none" = all specs in one nvim, "file" = one nvim per spec file
   -- (nothing leaks from one file into the next).
   isolated = "file",
