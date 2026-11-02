@@ -66,6 +66,7 @@ function M.run(items, new_text, write_changes, apply_func, on_pick_file, on_done
     confirm.open({
       question = string.format("%s (%d match(es))", rel, #list),
       choices = { "All", "Skip", "Only some", "Quit" },
+      default = 1, -- the kit focuses the safe button otherwise (Quit)
       on_answer = function(choice)
         if choice == "All" then
           -- apply_func may apply asynchronously (wide file set); advance the
