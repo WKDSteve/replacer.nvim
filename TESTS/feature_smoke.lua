@@ -1181,7 +1181,22 @@ do
     filters = { file_types = {}, globs = {}, exclude = {} },
   }
   batch.run(batch_file, tmp, btpl, replacer.run)
-  vim.wait(300)
+  -- The apply is asynchronous: wait for its effect, not a fixed time (a loaded machine needs longer).
+  vim.wait(5000, function()
+    local a, b = io.open(file_b1, "r"), io.open(file_b2, "r")
+    local done = false
+    if a and b then
+      done = a:read("*a"):find("ALPHA", 1, true) ~= nil
+        and b:read("*a"):find("BETA", 1, true) ~= nil
+    end
+    if a then
+      a:close()
+    end
+    if b then
+      b:close()
+    end
+    return done
+  end, 20)
 
   local bc1 = assert(io.open(file_b1, "r")):read("*a")
   local bc2 = assert(io.open(file_b2, "r")):read("*a")
@@ -1567,7 +1582,9 @@ do
     filters = { file_types = {}, globs = {}, exclude = {} },
   }
   replacer.run(req)
-  vim.wait(300)
+  vim.wait(5000, function()
+    return vim.fn.filereadable(ra_dir .. "/bar_target.txt") == 1
+  end, 20)
   check(
     "rename_assist: end-to-end via --also-rename-file renames the file",
     vim.fn.filereadable(ra_dir .. "/bar_target.txt") == 1 and vim.fn.filereadable(content_file) == 0
