@@ -1242,7 +1242,18 @@ do
     filters = { file_types = {}, globs = {}, exclude = {} },
   }
   batch.run(confirm_batch_file, tmp, btpl2, replacer.run)
-  vim.wait(300)
+  -- The batch applies asynchronously: wait for its effect, not a fixed time.
+  vim.wait(10000, function()
+    local a, b = io.open(file_c1, "r"), io.open(file_c2, "r")
+    local ok = a and b and a:read("*a"):match("GAMMA") and b:read("*a"):match("DELTA")
+    if a then
+      a:close()
+    end
+    if b then
+      b:close()
+    end
+    return ok and true or false
+  end, 10)
 
   package.loaded["ui.kit.confirm"] = nil
   replacer.setup({ confirm_all = false })
@@ -1296,7 +1307,17 @@ do
   -- `tmp` (a directory) is a non-single-file scope, so confirm_wide_scope
   -- must gate this run even though confirm_all is off.
   batch.run(wide_batch_file, tmp, btpl3, replacer.run)
-  vim.wait(300)
+  vim.wait(10000, function()
+    local a, b = io.open(file_d1, "r"), io.open(file_d2, "r")
+    local ok = a and b and a:read("*a"):match("EPSILON") and b:read("*a"):match("ZETA")
+    if a then
+      a:close()
+    end
+    if b then
+      b:close()
+    end
+    return ok and true or false
+  end, 10)
 
   package.loaded["ui.kit.confirm"] = nil
   replacer.setup({ confirm_all = false, confirm_wide_scope = false })
@@ -1708,7 +1729,7 @@ if vim.fn.executable("rg") == 1 then
   end, function(items, err)
     streamed_items, streamed_err, streamed_done = items, err, true
   end)
-  vim.wait(2000, function()
+  vim.wait(10000, function()
     return streamed_done
   end, 10)
 
@@ -1733,7 +1754,7 @@ if vim.fn.executable("rg") == 1 then
     async_items = items
     async_done = true
   end)
-  vim.wait(2000, function()
+  vim.wait(10000, function()
     return async_done
   end, 10)
 
