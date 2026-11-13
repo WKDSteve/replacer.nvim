@@ -89,3 +89,19 @@ is the reference, one file per question.
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 replacer.nvim is released under the [MIT License](https://opensource.org/licenses/MIT).
+
+<!-- connections:begin (written by the app-icons tool of the workshop; change integrations.json there, not this block) -->
+## Connections
+
+![replacer.nvim: what it uses and what uses it](assets/graphs/replacer.nvim.png)
+
+**Uses**
+
+- [pickers.nvim](https://github.com/WKDSteve/pickers.nvim): The in-picker `filter` key of replacer.nvim needs pickers.nvim (`pickers.refine`); everything else works without it. ([picture](assets/graphs/pair/replacer.nvim--pickers.nvim.png))
+- [ui.nvim](https://github.com/WKDSteve/ui.nvim): replacer.nvim asks for every decision through the confirm float of ui.nvim (`ui.kit.confirm`). ([picture](assets/graphs/pair/replacer.nvim--ui.nvim.png))
+- [lib.nvim](https://github.com/WKDSteve/lib.nvim): the shared base of the plugins.
+
+**Used by**
+
+- [recommender.nvim](https://github.com/WKDSteve/recommender.nvim): The float of recommender.nvim waits for the done event of replacer.nvim. ([picture](assets/graphs/pair/recommender.nvim--replacer.nvim.png))
+<!-- connections:end -->
