@@ -26,6 +26,11 @@ local function add_ui_nvim()
   if vim.env.UI_NVIM_PATH then
     candidates[#candidates + 1] = vim.env.UI_NVIM_PATH
   end
+  -- testing.nvim sets $UI_NVIM_DIR for every dependency it resolved: under `ci commit` the project
+  -- is a worktree in the temp directory, with no sibling checkout beside it.
+  if vim.env.UI_NVIM_DIR then
+    candidates[#candidates + 1] = vim.env.UI_NVIM_DIR
+  end
   candidates[#candidates + 1] = vim.fn.getcwd() .. "/../ui.nvim"
   candidates[#candidates + 1] = vim.fn.stdpath("data") .. "/lazy/ui.nvim"
 

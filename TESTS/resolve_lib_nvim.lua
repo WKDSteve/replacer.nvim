@@ -27,6 +27,11 @@ local function add_lib_nvim()
   if vim.env.LIB_NVIM_PATH then
     candidates[#candidates + 1] = vim.env.LIB_NVIM_PATH
   end
+  -- testing.nvim sets $LIB_NVIM_DIR for every dependency it resolved: under `ci commit` the project
+  -- is a worktree in the temp directory, with no sibling checkout beside it.
+  if vim.env.LIB_NVIM_DIR then
+    candidates[#candidates + 1] = vim.env.LIB_NVIM_DIR
+  end
   candidates[#candidates + 1] = vim.fn.getcwd() .. "/../lib.nvim"
   candidates[#candidates + 1] = vim.fn.stdpath("data") .. "/lazy/lib.nvim"
 
