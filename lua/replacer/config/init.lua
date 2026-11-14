@@ -312,6 +312,14 @@ local function validate(cfg)
   out.lsp = pick_bool(cfg.lsp, out.lsp)
   out.stream = pick_bool(cfg.stream, out.stream)
   out.deps_popup = pick_bool(cfg.deps_popup, out.deps_popup)
+  -- a boolean, or a table with the key(s) of the tree action; anything else keeps the default
+  if type(cfg.tree) == "boolean" then
+    out.tree = cfg.tree
+  elseif type(cfg.tree) == "table" then
+    local key = cfg.tree.key
+    local valid = key == nil or key == false or type(key) == "string" or type(key) == "table"
+    out.tree = valid and { key = key or nil } or out.tree
+  end
   out.history_max_entries = as_pos_int(cfg.history_max_entries) or out.history_max_entries
   -- `as_pos_int` would reject 0, and 0 is meaningful here: redraw on every
   -- chunk, no throttling at all.

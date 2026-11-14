@@ -43,6 +43,18 @@ function M.setup(opts)
       deps.show_once("replacer.nvim")
     end
   end
+
+  -- "Replace in this file or folder" on a node of a tree view: an entry at lib.nvim's registry, read
+  -- by filetree.nvim's own tree when there is one. `tree = false` leaves it out.
+  local tree = cfg_mod.get().tree
+  pcall(function()
+    local integration = require("replacer.integrations.tree")
+    if tree == false then
+      integration.unregister()
+    else
+      integration.register(type(tree) == "table" and tree or nil)
+    end
+  end)
 end
 
 --------------------------------------------------------------------------------

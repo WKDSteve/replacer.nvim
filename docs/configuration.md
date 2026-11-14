@@ -74,6 +74,7 @@ a config change — see [commands.md](commands.md).
 | `messages` | table | `{}` | Override message templates by key, see below |
 | `keymaps` | table | see [BINDINGS.md](BINDINGS.md#picker-keymaps) | Buffer-local picker keymaps |
 | `history_max_entries` | integer | `50` | How many past applies `:ReplaceHistory` keeps. `0` disables history entirely |
+| `tree` | boolean \| table | `true` | "Replace in this file or folder" on a node of a tree view, see [api.md](api.md#in-a-tree-view). `{ key = "<leader>r" }` also puts it on a key in the tree buffer; `false` does not offer it |
 | `deps_popup` | boolean | `true` | The one-time `lib.nvim.deps` "declared tools" popup, see [installation.md](installation.md#declared-cli-tools) |
 
 ## Picker keymaps

@@ -40,6 +40,10 @@ before you have had the chance to look at a diff.
 > **[pickers.nvim](https://github.com/WKDSteve/pickers.nvim)** — provides
 > the stacked path and content clauses `<C-f>` filters the result list with.
 >
+> **[filetree.nvim](https://github.com/WKDSteve/filetree.nvim)** — its own
+> tree offers "Replace in this file or folder" on a node
+> ([api](docs/api.md#in-a-tree-view)).
+>
 > **[recommender.nvim](https://github.com/WKDSteve/recommender.nvim)** —
 > finds the repetition worth renaming in the first place, and drives `:Replace`
 > to carry the rename out.

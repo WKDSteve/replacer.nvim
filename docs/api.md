@@ -105,6 +105,30 @@ print(cfg.default_scope) --> "%"
 against the current state without mutating it — what the command layer uses
 to build a per-run config from flags.
 
+## In a tree view
+
+`setup()` registers one action, `replacer.replace`, at
+`lib.nvim.tree.registry`: "Replace in this file or folder". A tree that reads
+the registry (the own tree of
+[filetree.nvim](https://github.com/WKDSteve/filetree.nvim), `adapter =
+"native"`) offers it on every node that is a file or a folder on disk, in its
+context menu and its action list. It asks for the text to find and the text to
+put in its place and runs `:Replace` with the node as the scope, so the matches
+go through the same picker, dry run and undo as a `:Replace` typed by hand. An
+empty replacement deletes; an empty search text or a cancelled question runs
+nothing.
+
+```lua
+require("replacer").setup({
+  tree = { key = "<leader>r" }, -- also on a key in the tree buffer
+  -- tree = false,              -- not offered
+})
+```
+
+Without a tree that reads the registry the entry is never looked at.
+`require("replacer.integrations.tree").replace_in(path)` asks the same two
+questions for any path.
+
 ## `require("replacer.hooks").on(event, fn)`
 
 Registers a hook in addition to anything in `config.hooks`. Config hooks run

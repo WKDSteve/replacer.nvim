@@ -64,6 +64,9 @@ See `.github/workflows/ci.yml` for the CI call.
   emoji) byte-offset correctness through search/compute/apply.
 - `rg_partial_failure.lua` — ripgrep exit 2 from unreadable paths only (broken
   symlinks) is a partial success (matches kept); a real rg error still fails.
+- `tree_action_spec.lua` — the action `replacer.replace` at
+  `lib.nvim.tree.registry`: what `setup()` registers (`tree` option, key,
+  `false`), the two questions and the `:Replace` it runs on a node.
 - `spec_coverage.lua` — every script under `TESTS/` is matched by
   `spec_pattern` of `.testing.lua` (or is a listed helper, which must not be).
 - `refine_wiring.lua` — `replacer.pickers.common`'s `without()` and the

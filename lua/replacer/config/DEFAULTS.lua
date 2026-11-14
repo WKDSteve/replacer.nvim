@@ -84,6 +84,12 @@ return {
   -- no vim.g needed. See docs/installation.md.
   deps_popup = true,
 
+  -- "Replace in this file or folder" on a node of a tree view (the own tree
+  -- of filetree.nvim reads it from lib.nvim's registry). true: in the tree's
+  -- menu and action list; { key = "<leader>r" }: on that key in the tree
+  -- buffer as well; false: not offered.
+  tree = true,
+
   -- Filters (also overridable per-run via command flags).
   file_types = {}, -- ripgrep --type values, e.g. { "lua", "md" }
   globs = {}, -- include glob patterns, e.g. { "*.lua" }
