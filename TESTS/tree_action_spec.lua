@@ -104,6 +104,29 @@ action.run({ { id = "heading", kind = "group" } }, {})
 action.run({}, {})
 check("a node without a path, or none, asks nothing", #runs == 0 and #prompts == 0)
 
+-- several marked nodes: one scope per run, and the person is told which
+local warned = {}
+local real_notify = vim.notify
+---@diagnostic disable-next-line: duplicate-set-field
+vim.notify = function(msg, level)
+  warned[#warned + 1] = { tostring(msg), level }
+end
+runs, prompts, answers = {}, {}, { "a", "b" }
+action.run({ { path = folder .. "/one.lua" }, { path = folder .. "/two.lua" } }, {})
+vim.notify = real_notify
+check(
+  "with two nodes marked it runs on the first",
+  vim.deep_equal(runs, { { "a", "b", folder .. "/one.lua" } })
+)
+check(
+  "... and says so, naming it, at warning level",
+  #warned == 1
+    and warned[1][2] == vim.log.levels.WARN
+    and warned[1][1]:find("2 nodes", 1, true) ~= nil
+    and warned[1][1]:find("one.lua", 1, true) ~= nil,
+  vim.inspect(warned)
+)
+
 -- ── the option ────────────────────────────────────────────────────────────────
 replacer.setup({ deps_popup = false, tree = { key = "<leader>r" } })
 check("tree = { key = ... } puts the action on that key", entry() and entry().key == "<leader>r")

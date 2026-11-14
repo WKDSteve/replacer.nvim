@@ -70,9 +70,21 @@ function M.register(opts)
     mutates = true,
     run = function(nodes)
       local node = nodes and nodes[1]
-      if node and type(node.path) == "string" then
-        M.replace_in(node.path)
+      if not (node and type(node.path) == "string") then
+        return
       end
+      -- one scope per run: with several nodes marked, say which one it is instead of leaving the
+      -- others out silently
+      if #nodes > 1 then
+        vim.notify(
+          ("[replacer] %d nodes are marked; replacing in the first only: %s"):format(
+            #nodes,
+            node.path
+          ),
+          vim.log.levels.WARN
+        )
+      end
+      M.replace_in(node.path)
     end,
   })
   return true
