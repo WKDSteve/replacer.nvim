@@ -17,7 +17,7 @@ place.
 | `:ReplaceTest [pattern] [sample]` | [regex.lua](../lua/replacer/regex.lua) | Small floating live pattern-test panel: line 1 is the pattern, line 2 the sample text, matches highlight as you type; `<Esc>`/`q` closes |
 | `:ReplaceRoot[!] {old} {new} [--flags]` | [root.lua](../lua/replacer/root.lua) | Like `:Replace`, but the scope is an auto-detected project root; prompts when detection finds more than one candidate |
 | `:ReplaceUndo [id]` | [checkpoint.lua](../lua/replacer/checkpoint.lua) | Restore files from a `--checkpoint` snapshot (most recent when `[id]` omitted) |
-| `:ReplaceHistory` | [history.lua](../lua/replacer/history.lua) | `vim.ui.select` over the last `history_max_entries` applies (default 50); re-runs the chosen one |
+| `:ReplaceHistory` | [history.lua](../lua/replacer/history.lua) | A chooser (`ui.kit` select) over the last `history_max_entries` applies (default 50); re-runs the chosen one |
 | `:ReplaceSavePreset {name} {old} {new} [scope] [--flags]` | [presets.lua](../lua/replacer/presets.lua) | Save a named, reusable replace request |
 | `:ReplacePreset {name}` | [presets.lua](../lua/replacer/presets.lua) | Run a saved preset exactly as saved; `<Tab>` completes names |
 | `:ReplaceBatch[!] {source} [scope] [--flags]` | [batch.lua](../lua/replacer/batch.lua) | Run multiple `{old → new}` pairs from a file/clipboard/quickfix, one full `:Replace` dispatch per pair |

@@ -18,7 +18,7 @@ list — one full `:Replace` dispatch per pair. With `confirm_all` on and no
 
 ## History
 
-`:ReplaceHistory` shows a `vim.ui.select` picker over the last 50 applies
+`:ReplaceHistory` shows a chooser (`ui.kit` select) over the last 50 applies
 and re-runs the chosen one.
 
 - **Module:** `history.lua` (`M.add`, `M.pick`, `M.register`)

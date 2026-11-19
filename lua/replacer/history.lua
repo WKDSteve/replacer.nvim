@@ -1,7 +1,7 @@
 ---@module 'replacer.history'
 --- Recent replace applies (last 50), stored at
 --- stdpath("data")/replacer/history.json. :ReplaceHistory re-runs a past
---- entry via vim.ui.select.
+--- entry via the ui.kit chooser.
 
 local notify = require("replacer.util.notify")
 
@@ -111,7 +111,7 @@ local function format_entry(entry)
   )
 end
 
---- Open vim.ui.select over recent runs; on selection, re-run it (in the
+--- Open the ui.kit chooser over recent runs; on selection, re-run it (in the
 --- interactive picker unless the original run was --all) via `run_fun`.
 ---@param run_fun fun(request: RP_Request): nil
 ---@return nil

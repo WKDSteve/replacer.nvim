@@ -177,7 +177,7 @@ first, before any session-local hook you register from a keymap or command.
 Once a `:Replace`/`:ReplaceBatch` invocation is dialed in — the right scope,
 the right flags, the right pattern — you have two ways to avoid retyping it:
 
-- `:ReplaceHistory` (`history.lua`) re-opens a `vim.ui.select` picker over
+- `:ReplaceHistory` (`history.lua`) re-opens a chooser (`ui.kit` select) over
   your last 50 applies and re-runs the one you pick. Good for "I want to run
   that exact thing again" without remembering the flags.
 - `:ReplaceSavePreset {name} {old} {new} [scope] [--flags]` /

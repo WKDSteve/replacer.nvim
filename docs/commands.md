@@ -152,7 +152,7 @@ In regex mode, `{new}` may use `\0`–`\9` to reference `\(...\)` groups from
 
 | Command | |
 | --- | --- |
-| `:ReplaceHistory` | `vim.ui.select` over the last `history_max_entries` real applies (never dry-run/export/quickfix); picking one re-runs it |
+| `:ReplaceHistory` | A chooser (`ui.kit` select) over the last `history_max_entries` real applies (never dry-run/export/quickfix); picking one re-runs it |
 | `:ReplaceSavePreset {name} {old} {new} [scope] [--flags]` | Save a named, reusable request including its flags |
 | `:ReplacePreset {name}` | Run a saved preset exactly as saved. `<Tab>` completes names |
 | `:ReplaceBatch[!] {source} [scope] [--flags]` | Run multiple `{old → new}` pairs, one full `:Replace` dispatch each |
