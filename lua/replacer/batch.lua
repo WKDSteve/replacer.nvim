@@ -132,6 +132,12 @@ end
 --- Dispatch every pair as its own :Replace-equivalent request via `run_fun`
 --- (search + apply, or plan-only when `req_template.dry` is set). Each
 --- pair's own result is reported by the normal apply pipeline.
+---
+--- One pair at a time: the next pair starts when the run of the one before is
+--- over (its `on_end`, fired with `User ReplacerDone`). The search of a run is
+--- asynchronous; started all at once, a later pair searched a file before an
+--- earlier pair had written it and then skipped its own spots there as
+--- "changed content".
 ---@param pairs_list RP_BatchPair[]
 ---@param scope string
 ---@param req_template RP_Request
@@ -139,7 +145,21 @@ end
 ---@param source string  # for the summary notification only
 ---@return nil
 local function dispatch_all(pairs_list, scope, req_template, run_fun, source)
-  for _, pair in ipairs(pairs_list) do
+  notify.info(string.format("batch: dispatched %d pair(s) from %s", #pairs_list, source))
+
+  local function run_pair(i)
+    local pair = pairs_list[i]
+    if not pair then
+      return
+    end
+    local started_next = false
+    local function next_pair()
+      if started_next then
+        return
+      end
+      started_next = true
+      run_pair(i + 1)
+    end
     ---@type RP_Request
     local req = vim.deepcopy(req_template)
     req.old, req.new, req.scope = pair.old, pair.new, scope
@@ -153,10 +173,16 @@ local function dispatch_all(pairs_list, scope, req_template, run_fun, source)
     req.overrides = req.overrides or {}
     req.overrides.confirm_all = false
     req.overrides.confirm_wide_scope = false
-    run_fun(req)
+    req.on_end = next_pair
+    local ok, err = pcall(run_fun, req)
+    if not ok then
+      -- a pair that raised never reaches its end signal: report it and go on
+      notify.error(string.format("batch: pair %d (%s) failed: %s", i, pair.old, tostring(err)))
+      next_pair()
+    end
   end
 
-  notify.info(string.format("batch: dispatched %d pair(s) from %s", #pairs_list, source))
+  run_pair(1)
 end
 
 --- Run every pair, sequentially dispatching one :Replace-equivalent request

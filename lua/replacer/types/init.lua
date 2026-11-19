@@ -89,6 +89,7 @@
 ---@field filters RP_Filters
 ---@field filter? fun(match: RP_Match): boolean  # keep predicate applied post-collection (true = keep)
 ---@field filter_empty_msg? string  # notice shown when filter removes every match
+---@field on_end? fun(data: RP_RunEnd)  # called once when the run is over, right after `User ReplacerDone`
 
 ---@alias ReplacerRunCallback fun(request: RP_Request): nil
 ---@alias ReplacerResolveScopeFn fun(scope: RP_Scope): string[], boolean

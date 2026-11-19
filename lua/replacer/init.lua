@@ -102,6 +102,9 @@ local function make_finish(request)
         modeline = false,
         data = data,
       })
+      if type(request.on_end) == "function" then
+        pcall(request.on_end, data)
+      end
     end)
   end
 end
