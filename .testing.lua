@@ -6,8 +6,11 @@ return {
   -- Lua module root of the project.
   plugin = "replacer",
   -- How the spec files are run: "auto" = sniffed per file, "h" = on the project's own TESTS/harness.lua,
-  -- "script" = a self-running script in its own process.
-  dialect = "script",
+  -- "script" = a self-running script in its own process. The feature sheets run through one busted spec,
+  -- each sheet its own case `sheet:<id>`.
+  dialect = { ["TESTS/sheets_spec.lua"] = "busted", ["*"] = "script" },
+  -- One child editor per feature sheet: more of them than fit into the default 60 s of a spec file on a slow runner.
+  timeouts = { case_ms = 30000, file_ms = 300000 },
   -- Lua patterns a file name must match to be a spec (the old runner started these files by name).
   spec_pattern = {
     "_spec%.lua$",
@@ -50,6 +53,7 @@ return {
     -- rg and git are the real tools the plugin drives: specs run rg searches and probes
     -- (`rg --version`, `rg --type-list`) and build throwaway git repositories in a temp directory
     -- (argtypes_debug_error, async_utf8, feature_smoke, gitfiles_equivalence, health_pickers_tscode).
-    spawn = { "rg", "git" },
+    -- sheets_spec.lua: every feature sheet (TESTS/sheets/) runs in a child editor.
+    spawn = { "rg", "git", "nvim" },
   },
 }
