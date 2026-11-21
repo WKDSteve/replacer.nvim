@@ -1,137 +1,180 @@
+# CI of replacer.nvim: one pipeline, GitHub-hosted runners only.
+#
+# What is checked lives only in the `ci` section of .testing.lua; every leg runs it with `scripts/test.sh ci`, exactly
+# as the pre-push hook and `:Testing ci` do. This file only prepares the machine.
+#
+# - every event (a push to main, a pull request, also from a fork): GitHub-hosted runners only, a throwaway VM with a
+#   read-only token and no secrets; nothing runs on the maintainer's machine. The whole profile runs on ubuntu, the
+#   steps that depend on the platform (the suite) on windows and macOS. The legs pin nvim 0.12.2, stylua 2.5.2, luacheck
+#   1.2.0.
+# - the result cache (docs/CI-CACHE.md of testing.nvim): the suite reuses the green results of earlier runs; a pull
+#   request only restores it, only a push to main saves it.
+#
+# A fork can edit this file in its pull request (e.g. `runs-on: self-hosted`). The repository therefore requires
+# approval before a workflow of an outside contributor runs; never approve a pull request that touches `.github/`.
+
 name: CI
 
 on:
   push:
-    branches: ["main"]
+    branches: [main, "ci/**"]
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  lint:
-    name: luacheck
+  # testing ci land pushes a commit to a check branch ci/** first and moves main to it only when that run was green:
+  # the push to main is then the same commit again. This job (seconds, no checkout) finds such a green run of this
+  # workflow for this commit on a ci/** branch; then the legs are skipped (publish-ci-verified, if any, runs). Any other
+  # answer (none, an API error) runs the legs as usual.
+  already-verified:
+    name: already verified on ci/**
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    outputs:
+      verified: ${{ steps.look.outputs.verified }}
     steps:
-      - uses: actions/checkout@v5
+      - id: look
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          WORKFLOW: ${{ github.workflow }}
+        run: |
+          n=$(gh api "repos/$REPO/actions/runs?head_sha=$SHA&event=push&status=success&per_page=50" \
+            --jq "[.workflow_runs[] | select(.name == env.WORKFLOW and (.head_branch | startswith(\"ci/\")))] | length" \
+            || echo 0)
+          if [ "${n:-0}" -gt 0 ]; then
+            echo "green on a ci/** branch already: the legs are skipped"
+            echo "verified=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "verified=false" >> "$GITHUB_OUTPUT"
+          fi
 
-      - uses: leafo/gh-actions-lua@v13
+  pipeline:
+    name: testing ci (${{ matrix.name }})
+    needs: [already-verified]
+    # Not on main when the same commit was green on a check branch ci/** (testing ci land): it ran there already.
+    if: ${{ !cancelled() && needs.already-verified.outputs.verified != 'true' }}
+    runs-on: ${{ matrix.runs-on }}
+    timeout-minutes: 30
+    strategy:
+      # One platform failing must not cancel the other.
+      fail-fast: false
+      matrix:
+        # Every event gets hosted runners: the whole profile on ubuntu, and on windows and macOS the steps that depend
+        # on the platform (stylua and luacheck do not).
+        include: ${{ fromJSON('[{"name":"ubuntu","runs-on":"ubuntu-latest","hosted":true,"steps":""},{"name":"windows","runs-on":"windows-latest","hosted":true,"steps":"--step=suite"},{"name":"macos","runs-on":"macos-latest","hosted":true,"steps":"--step=suite"}]') }}
+    defaults:
+      run:
+        # One shell on every runner: `bash` is the WSL launcher on the self-hosted machine, pwsh is everywhere.
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          luaVersion: "5.1"
-      - uses: leafo/gh-actions-luarocks@v6
-
-      - name: Install luacheck
-        run: luarocks install luacheck 1.2.0
-
-      - name: Run luacheck
-        run: find lua plugin TESTS -name '*.lua' | xargs luacheck
-
-  fmt:
-    name: stylua --check
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: JohnnyMorganz/stylua-action@v5
+          persist-credentials: false
+      # Found by scripts/test.sh in `.deps/<name>`. lib.nvim, ui.nvim and testing.nvim come from the branch that
+      # only moves once the dependency's own CI is green.
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+          repository: WKDSteve/lib.nvim
+          path: .deps/lib.nvim
+          ref: ci-verified
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+          repository: WKDSteve/ui.nvim
+          path: .deps/ui.nvim
+          ref: ci-verified
+      # the soft dependency: TESTS/refine_wiring.lua checks the picker filter wiring against the real one
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+          repository: WKDSteve/pickers.nvim
+          path: .deps/pickers.nvim
+          ref: ci-verified
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+          repository: WKDSteve/testing.nvim
+          path: .deps/testing.nvim
+          ref: ci-verified
+      # The tools every leg needs, at the versions of the table in testing.nvim (testing.ci.workflow).
+      - uses: rhysd/action-setup-vim@febef33995d6649302e9d88dda81e071b68f16a7 # v1
+        if: matrix.hosted
+        with:
+          neovim: true
+          version: v0.12.2
+      # The action installs stylua on PATH; `--version` only proves it is there, the check itself is the pipeline's.
+      - uses: JohnnyMorganz/stylua-action@76fd70c03e6340ceaf673366712db9b20560b402 # v5
+        if: matrix.hosted && matrix.steps == ''
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           version: v2.5.2
-          args: --check lua/ TESTS/
-
-  test:
-    name: headless test suite (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
-    strategy:
-      # One platform failing must not cancel the others: which of the three
-      # broke is the whole information content of this job.
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-    defaults:
-      run:
-        # Windows runners default to PowerShell; one shell on all three keeps
-        # the run step itself from being what differs between platforms.
+          args: --version
+      # luacheck as the release binary of lunarmodules, its sha256 pinned (checked against the maintainer's signature;
+      # the file scripts/wsl-tools.sh of testing.nvim installs): no Lua from www.lua.org, whose download timed out.
+      # `std = "luajit"` in .luacheckrc decides what is checked against.
+      - if: matrix.hosted && matrix.steps == ''
         shell: bash
-    # TESTS/resolve_lib_nvim.lua/resolve_ui_nvim.lua look for a *sibling*
-    # checkout (<repo>/../lib.nvim, <repo>/../ui.nvim), but this job checks
-    # them out *inside* the workspace so `set rtp+=./lib.nvim`/`./ui.nvim`
-    # work. $LIB_NVIM_PATH/$UI_NVIM_PATH are the resolvers' own
-    # first-priority override, meant for exactly this case.
-    env:
-      # scripts/test.sh and TESTS/minimal_init.lua look for $<NAME>_DIR ...
-      TESTING_NVIM_DIR: ${{ github.workspace }}/testing.nvim
-      LIB_NVIM_DIR: ${{ github.workspace }}/lib.nvim
-      UI_NVIM_DIR: ${{ github.workspace }}/ui.nvim
-      # ... and the scripts' own resolvers (TESTS/resolve_*.lua) the *_PATH
-      # spelling; .testing.lua lets them through to the child editor.
-      LIB_NVIM_PATH: ${{ github.workspace }}/lib.nvim
-      UI_NVIM_PATH: ${{ github.workspace }}/ui.nvim
-      PICKERS_NVIM_PATH: ${{ github.workspace }}/pickers.nvim
-    steps:
-      - uses: actions/checkout@v5
-
-      # Tests require lib.nvim on the runtimepath (the plugin's own hard
-      # dependency for the command layer, notifications, confirm dialog,
-      # and export) -- checked out as a subdirectory of the workspace so it
-      # can be added via `set rtp+=./lib.nvim` below.
-      - uses: actions/checkout@v5
-        with:
-          repository: WKDSteve/lib.nvim
-          path: lib.nvim
-          ref: ci-verified
-
-      # ui.nvim: same tier as lib.nvim above -- ui.kit.confirm is
-      # require()d unconditionally by replacer.init, not soft.
-      - uses: actions/checkout@v5
-        with:
-          repository: WKDSteve/ui.nvim
-          path: ui.nvim
-          ref: ci-verified
-
-      # pickers.nvim is a *soft* dependency (only the picker `filter` key
-      # needs it). refine_wiring.lua exercises that wiring; without this
-      # checkout it would only run the engine-agnostic half.
-      - uses: actions/checkout@v5
-        with:
-          repository: WKDSteve/pickers.nvim
-          path: pickers.nvim
-          ref: ci-verified
-
-      - uses: rhysd/action-setup-vim@v1
-        with:
-          neovim: true
-          version: stable
-
-      - name: Install ripgrep
         run: |
-          # `rg` is a real dependency of these specs, not a convenience -- they
-          # shell out to it. The install is the one step that has to differ per
-          # runner image; everything after it is identical on all three. The
-          # `rg --version` at the end is the actual gate: if a package manager
-          # silently no-ops, the suite must not start and then fail obscurely.
-          case "${{ runner.os }}" in
-            Linux)   sudo apt-get update && sudo apt-get install -y ripgrep ;;
-            macOS)   brew install ripgrep || true ;;
-            Windows) choco install ripgrep -y --no-progress ;;
-          esac
-          rg --version
-
-      # Checked out from the branch that only moves once the dependency's own CI is green.
-      - uses: actions/checkout@v5
+          curl -fsSL -o "$RUNNER_TEMP/luacheck" "https://github.com/lunarmodules/luacheck/releases/download/v1.2.0/luacheck"
+          echo "d68da17fca0697d9e2fb04201f3884abd259fa558b3a449bccaed47f1390defc  $RUNNER_TEMP/luacheck" | sha256sum -c -
+          install -D -m 755 "$RUNNER_TEMP/luacheck" "$HOME/.local/bin/luacheck"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      # ripgrep: the specs shell out to the real rg (searches, rg --version, rg --type-list)
+      - name: Install ripgrep (Linux)
+        if: matrix.hosted && runner.os == 'Linux'
+        run: sudo apt-get install -y ripgrep
+      - name: Install ripgrep (macOS)
+        if: matrix.hosted && runner.os == 'macOS'
+        run: brew install ripgrep
+      - name: Install ripgrep (Windows)
+        if: matrix.hosted && runner.os == 'Windows'
+        run: choco install ripgrep -y --no-progress
+      # The result cache (docs/CI-CACHE.md of testing.nvim). The key is only the transport: every entry carries its
+      # own full spec key and is checked against it when read, so a wrong restore can lower the hit rate and never turn
+      # a result green. A pull request only restores; only a push to main saves.
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
-          repository: "WKDSteve/testing.nvim"
-          path: testing.nvim
-          ref: ci-verified
-      # Every script under TESTS/ runs on testing.nvim (dialect "script", one
-      # editor per file); a script that dies halfway is a failed case, which is
-      # what TESTS/ci_guard.lua used to enforce.
-      - name: Run the specs
-        run: bash scripts/test.sh --json "$RUNNER_TEMP/testing-ir.json"
-      # The IR is what a reporter or a person reads to find out WHICH case failed on WHICH platform.
-      - uses: actions/upload-artifact@v7
+          path: ${{ runner.temp }}/testing-cache
+          key: testing-${{ runner.os }}-nvim0.12.2-${{ github.sha }}
+          restore-keys: testing-${{ runner.os }}-nvim0.12.2-
+      - name: scripts/test.sh ci ${{ matrix.steps }}
+        env:
+          TESTING_CACHE_HOME: ${{ runner.temp }}/testing-cache
+          CI_STEPS: ${{ matrix.steps }}
+          CI_REPORT: ${{ runner.temp }}/ci-report.json
+          CI_IR: ${{ runner.temp }}/suite-ir.json
+        run: |
+          nvim --version | Select-Object -First 1
+          # Git Bash on Windows (never the WSL launcher), bash elsewhere; scripts/test.sh is a bash script.
+          $bash = if ($IsWindows) { Join-Path $env:ProgramFiles 'Git\bin\bash.exe' } else { 'bash' }
+          $steps = @($env:CI_STEPS -split ' ' | Where-Object { $_ })
+          & $bash scripts/test.sh ci @steps --keep-going --no-agent "--json=$env:CI_REPORT" -- "--json=$env:CI_IR" --cached
+          exit $LASTEXITCODE
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        with:
+          path: ${{ runner.temp }}/testing-cache
+          key: testing-${{ runner.os }}-nvim0.12.2-${{ github.sha }}
+      # The report names every step and, for a red one, its findings or last output lines; the suite IR (everything
+      # after `--` goes to the suite step) names the failing case and its assertions.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: failure()
         with:
-          name: testing-ir-${{ matrix.os }}
-          path: ${{ runner.temp }}/testing-ir.json
+          name: ci-${{ matrix.name }}
+          path: |
+            ${{ runner.temp }}/ci-report.json
+            ${{ runner.temp }}/suite-ir.json
           if-no-files-found: ignore
           retention-days: 14

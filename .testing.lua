@@ -43,6 +43,35 @@ return {
   host = "c",
   -- Environment variables the specs read; a child editor inherits an allowlist only (never secrets).
   env_allow = { "LIB_NVIM_PATH", "PICKERS_NVIM_PATH", "UI_NVIM_PATH" },
+  ci = {
+    -- The GitHub workflow, generated: `testing init --workflow=public --force` writes .github/workflows/ci.yml from
+    -- this (testing.nvim docs/WORKFLOW-CI.md); the step workflow-in-sync keeps the two together.
+    workflow = {
+      name = "replacer.nvim",
+      layout = "hosted",
+      -- the steps that depend on the platform: the windows and macOS legs run only these
+      platform = { "suite" },
+      -- `testing ci land`: a check branch ci/** runs the hosted legs, main moves to a commit only once it is green there
+      land = true,
+      -- more checkouts below .deps/, not on the runtimepath of the specs
+      checkouts = {
+        {
+          repo = "WKDSteve/pickers.nvim",
+          ref = "ci-verified",
+          why = "the soft dependency: TESTS/refine_wiring.lua checks the picker filter wiring against the real one",
+        },
+      },
+      packages = {
+        {
+          name = "ripgrep",
+          why = "the specs shell out to the real rg (searches, rg --version, rg --type-list)",
+        },
+      },
+    },
+    steps = {
+      ["workflow-in-sync"] = { preset = "workflow-in-sync" },
+    },
+  },
   -- Guards (docs/GUARDS.md of testing.nvim); the rest keep the runner defaults.
   guards = {
     -- Real processes are started on purpose (see guard_allow.spawn); anything else is an error.
