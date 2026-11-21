@@ -4,7 +4,8 @@
 -- This file covers `replacer.pickers.common`: the `pickers.refine` handle it
 -- builds for an `RP_Match` list, and the `without()` helper the reopen path
 -- leans on. pickers.nvim is picked up as a sibling checkout (same rule as
--- lib.nvim); the refine-handle checks are skipped with a note if it is absent.
+-- lib.nvim); the refine-handle checks are skipped with a note if it is absent
+-- (under CI=true, where the workflow checks it out, that is a failure).
 -- (An earlier version of this comment claimed the picker `run()` functions
 -- "need telescope/fzf loaded and are exercised manually" -- they don't, and
 -- now aren't: TESTS/pickers_backends.lua drives both with the actual backend
@@ -74,6 +75,12 @@ end
 do
   local has_pickers = pcall(require, "pickers.refine")
   if not has_pickers then
+    -- the CI workflow checks pickers.nvim out below .deps/: there a missing one is a broken lookup, not a skip
+    check(
+      "pickers.nvim found (required under CI)",
+      vim.env.CI ~= "true",
+      "pickers.nvim not found below .deps/, ../ or the lazy directory"
+    )
     print("  skip refine-handle checks (pickers.nvim not found)")
   else
     local h = common.new_refine()
