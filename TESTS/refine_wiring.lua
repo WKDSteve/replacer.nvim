@@ -26,13 +26,15 @@ if not add_ui_nvim() then
   os.exit(1)
 end
 
--- pickers.nvim: sibling checkout, else the lazy-managed copy. Built by
--- appending — a nil $PICKERS_NVIM_PATH at index 1 would stop ipairs early.
+-- pickers.nvim: the CI checkout below .deps/, a sibling checkout, else the
+-- lazy-managed copy. Built by appending — a nil $PICKERS_NVIM_PATH at index 1
+-- would stop ipairs early.
 do
   local cands = {}
   if vim.env.PICKERS_NVIM_PATH then
     cands[#cands + 1] = vim.env.PICKERS_NVIM_PATH
   end
+  cands[#cands + 1] = vim.fn.getcwd() .. "/.deps/pickers.nvim"
   cands[#cands + 1] = vim.fn.getcwd() .. "/../pickers.nvim"
   cands[#cands + 1] = vim.fn.stdpath("data") .. "/lazy/pickers.nvim"
   for _, p in ipairs(cands) do
