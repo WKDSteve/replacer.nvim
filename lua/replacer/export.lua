@@ -10,6 +10,8 @@
 local encoding = require("replacer.encoding")
 local list = require("lib.nvim.ui.list")
 
+local IS_WIN = vim.fn.has("win32") == 1
+
 local M = {}
 
 --------------------------------------------------------------------------------
@@ -162,6 +164,11 @@ function M.build_patch(results)
     local hunks = text_diff(a, b)
     if type(hunks) == "string" and hunks ~= "" then
       local rel = vim.fn.fnamemodify(r.path, ":.")
+      -- git reads only "/" as a separator in a patch; on Windows `:.` keeps native backslashes
+      -- (elsewhere a backslash is part of a file name and stays)
+      if IS_WIN then
+        rel = rel:gsub("\\", "/")
+      end
       out[#out + 1] = "--- a/" .. rel
       out[#out + 1] = "+++ b/" .. rel
       out[#out + 1] = (hunks:gsub("\n$", ""))

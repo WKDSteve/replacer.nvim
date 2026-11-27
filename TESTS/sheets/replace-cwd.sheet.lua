@@ -36,6 +36,10 @@ return {
       timeout = 5000,
       note = "the dry run shows the diff it would apply",
     },
+    {
+      expect = [[table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), "\n"):find("--- a/sub/b.txt", 1, true)]],
+      note = "its a/ b/ paths use '/' on every system, so git can apply it",
+    },
     { expect = [[_G.get("sub/b.txt") == "foo and foo\nbar\n"]], note = "and writes nothing" },
     { lua = [[vim.cmd("silent! only"); _G.notes = {}]] },
 

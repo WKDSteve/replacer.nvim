@@ -1936,6 +1936,42 @@ do
   local okp = export.write_export(ppath, results, "X")
   check("export: patch file written", okp and vim.fn.filereadable(ppath) == 1)
 
+  -- The a/ b/ paths of a patch use "/" on every system: git reads no other separator, and on
+  -- Windows the path of a match carries native backslashes. The patch applies with git there.
+  do
+    local repo = tmp .. "/patch-repo"
+    vim.fn.mkdir(repo .. "/sub", "p")
+    local fh = assert(io.open(repo .. "/sub/b.txt", "wb"))
+    fh:write("foo\nbar\n")
+    fh:close()
+    local sep = vim.fn.has("win32") == 1 and "\\" or "/"
+    local prev_cwd = vim.fn.getcwd()
+    vim.cmd.cd(vim.fn.fnameescape(repo))
+    local native = vim.fn.getcwd() .. sep .. "sub" .. sep .. "b.txt"
+    ---@diagnostic disable: missing-fields
+    local sub_patch = export.build_patch({
+      { path = native, old_lines = { "foo", "bar" }, new_lines = { "X", "bar" } },
+    })
+    ---@diagnostic enable: missing-fields
+    check(
+      "patch: a/ b/ paths use '/' (native " .. sep .. " path)",
+      sub_patch:find("--- a/sub/b.txt\n+++ b/sub/b.txt\n", 1, true) ~= nil,
+      sub_patch
+    )
+    if vim.fn.executable("git") == 1 then
+      local pfile = repo .. "/sub.patch"
+      local pf = assert(io.open(pfile, "wb"))
+      pf:write(sub_patch)
+      pf:close()
+      vim.fn.system({ "git", "-C", repo, "init", "-q" })
+      local out = vim.fn.system({ "git", "-C", repo, "apply", "--check", pfile })
+      check("patch: git apply --check accepts the exported patch", vim.v.shell_error == 0, out)
+    else
+      print("n/a  patch: git apply --check (git not found)")
+    end
+    vim.cmd.cd(vim.fn.fnameescape(prev_cwd))
+  end
+
   -- ERR-11: a match on a file that cannot be read must be counted
   -- distinctly from one that was merely stale, not folded silently into
   -- the same "skipped" bucket.
