@@ -221,6 +221,28 @@ do
   check("that run ends as error", reasons[1] == "error", vim.inspect(reasons))
 end
 
+-- 6) without on_error, an on_done that raises on the last chunk is not called a second time
+do
+  local src = tmp .. "/src_done"
+  vim.fn.mkdir(src, "p")
+  local items = {}
+  for n = 1, 12 do -- two chunks: the last one runs on a later tick
+    local path = string.format("%s/f%02d.txt", src, n)
+    write_file(path, "omega\n")
+    items[#items + 1] = { id = n, path = path, lnum = 1, col0 = 0, old = "omega", line = "omega" }
+  end
+  local calls = 0
+  require("replacer.apply").apply_matches(items, "omega", "o", true, {}, function()
+    calls = calls + 1
+    error("boom in on_done")
+  end)
+  vim.wait(5000, function()
+    return calls > 0
+  end, 20)
+  vim.wait(200) -- room for a second call
+  check("a raising on_done is called once", calls == 1, calls)
+end
+
 vim.fn.delete(tmp, "rf")
 
 print(string.format("\n=== %d passed, %d failed ===", pass, fail))

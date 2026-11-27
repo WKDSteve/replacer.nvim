@@ -409,14 +409,20 @@ function M.apply_matches(items, old, new_text, write_changes, cfg, on_done, on_e
   local total = #paths
   local i = 0
   local run_step -- the guarded `step`, set below; later chunks are scheduled through it
+  local delivered = false -- `on_done` was reached (it may itself be what raised)
+
+  local function deliver()
+    finish_reporting()
+    delivered = true
+    on_done(files, spots, errors)
+  end
 
   local function step()
     -- A user-requested cancel stops scheduling more work; whatever was already
     -- written stays written (there is no transaction to roll back), and the
     -- totals so far are still reported.
     if h and h.cancelled then
-      finish_reporting()
-      on_done(files, spots, errors)
+      deliver()
       return
     end
 
@@ -438,13 +444,13 @@ function M.apply_matches(items, old, new_text, write_changes, cfg, on_done, on_e
     if h then
       h:finish(string.format("%d file(s), %d spot(s)", files, spots))
     end
-    finish_reporting()
-    on_done(files, spots, errors)
+    deliver()
   end
 
   -- A chunk that raises on a later tick would never reach `on_done`, and the run
   -- would have no end: report it, close the indicator, and hand it to `on_error`
-  -- (or end with the totals so far when the caller gave none).
+  -- (or end with the totals so far when the caller gave none, unless `on_done`
+  -- itself raised: it is never called twice).
   local function guarded_step()
     local ok, err = xpcall(step, debug.traceback)
     if ok then
@@ -456,7 +462,8 @@ function M.apply_matches(items, old, new_text, write_changes, cfg, on_done, on_e
     notify.error("apply failed: " .. tostring(err))
     if on_error then
       on_error(err)
-    else
+    elseif not delivered then
+      delivered = true
       on_done(files, spots, errors)
     end
   end

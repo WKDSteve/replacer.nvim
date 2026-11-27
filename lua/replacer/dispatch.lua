@@ -152,7 +152,8 @@ local function make_applier(request, cfg, single_file, tally, finish)
       end
     end
 
-    -- a chunk that raised on a later tick ends the run as "error" (keeping what was written so far)
+    -- a chunk that raised on a later tick ends the run as "error"; the totals are those of the
+    -- earlier applies (what this apply wrote before it raised stays written, uncounted)
     local function failed()
       finish("error", tally.files, tally.spots)
     end
