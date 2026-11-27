@@ -193,17 +193,20 @@ do
   local progress = require("lib.nvim.progress")
   local real_create = progress.create
   local updates = 0
-  progress.create = function()
-    return {
-      cancelled = false,
-      update = function()
+  -- the real handle (the search reports through one too); only the apply's second update raises
+  progress.create = function(...)
+    local h = real_create(...)
+    local real_update = h.update
+    h.update = function(self, u)
+      if type(u) == "table" and u.text == "applying replacements…" then
         updates = updates + 1
         if updates == 2 then -- the second chunk runs on a later tick
           error("boom in a later apply chunk")
         end
-      end,
-      finish = function() end,
-    }
+      end
+      return real_update(self, u)
+    end
+    return h
   end
   local reasons, stop = done_reasons()
   batch.run(pairs_file, src, template(), replacer.run)
