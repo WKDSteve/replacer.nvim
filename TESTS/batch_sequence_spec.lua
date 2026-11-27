@@ -130,6 +130,97 @@ do
   )
 end
 
+-- Collect the reason of every run end (`User ReplacerDone`); the returned function stops listening.
+local function done_reasons()
+  local reasons = {}
+  local id = vim.api.nvim_create_autocmd("User", {
+    pattern = replacer.DONE_EVENT,
+    callback = function(ev)
+      reasons[#reasons + 1] = ev.data and ev.data.reason
+    end,
+  })
+  return reasons, function()
+    vim.api.nvim_del_autocmd(id)
+  end
+end
+
+-- 4) a pair whose search callback raises (after run() returned) ends as "error"; the next pair still runs
+do
+  local src = tmp .. "/src_cb"
+  vim.fn.mkdir(src, "p")
+  write_file(src .. "/a.txt", "alpha\n")
+  write_file(src .. "/b.txt", "beta\n")
+  local pairs_file = tmp .. "/pairs_cb.txt"
+  write_file(pairs_file, "alpha => one\nbeta => two\n")
+  replacer.setup({ confirm_all = false, confirm_wide_scope = false, write_changes = true })
+  local dispatch = require("replacer.dispatch")
+  local real_dispatch = dispatch.dispatch
+  local raised = false
+  dispatch.dispatch = function(request, ...)
+    if request.old == "alpha" then
+      raised = true
+      error("boom in the search callback")
+    end
+    return real_dispatch(request, ...)
+  end
+  local reasons, stop = done_reasons()
+  batch.run(pairs_file, src, template(), replacer.run)
+  local ok = vim.wait(10000, function()
+    return read_file(src .. "/b.txt") == "two\n" and #reasons >= 2
+  end, 20)
+  stop()
+  dispatch.dispatch = real_dispatch
+  check("the search callback raised", raised)
+  check(
+    "a raising search callback does not stop the next pair",
+    ok and read_file(src .. "/a.txt") == "alpha\n",
+    vim.inspect({ read_file(src .. "/a.txt"), read_file(src .. "/b.txt"), reasons })
+  )
+  check("that run ends as error", reasons[1] == "error", vim.inspect(reasons))
+end
+
+-- 5) a later (scheduled) chunk of a wide apply raises: the run ends as "error", the next pair still runs
+do
+  local src = tmp .. "/src_chunk"
+  vim.fn.mkdir(src, "p")
+  for n = 1, 25 do -- more than one apply chunk (10 files each)
+    write_file(string.format("%s/f%02d.txt", src, n), "gamma\n")
+  end
+  write_file(src .. "/z.txt", "delta\n")
+  local pairs_file = tmp .. "/pairs_chunk.txt"
+  write_file(pairs_file, "gamma => g\ndelta => d\n")
+  replacer.setup({ confirm_all = false, confirm_wide_scope = false, write_changes = true })
+  local progress = require("lib.nvim.progress")
+  local real_create = progress.create
+  local updates = 0
+  progress.create = function()
+    return {
+      cancelled = false,
+      update = function()
+        updates = updates + 1
+        if updates == 2 then -- the second chunk runs on a later tick
+          error("boom in a later apply chunk")
+        end
+      end,
+      finish = function() end,
+    }
+  end
+  local reasons, stop = done_reasons()
+  batch.run(pairs_file, src, template(), replacer.run)
+  local ok = vim.wait(10000, function()
+    return read_file(src .. "/z.txt") == "d\n" and #reasons >= 2
+  end, 20)
+  stop()
+  progress.create = real_create
+  check("the second apply chunk raised", updates >= 2, updates)
+  check(
+    "a raising apply chunk does not stop the next pair",
+    ok,
+    vim.inspect({ read_file(src .. "/z.txt"), reasons })
+  )
+  check("that run ends as error", reasons[1] == "error", vim.inspect(reasons))
+end
+
 vim.fn.delete(tmp, "rf")
 
 print(string.format("\n=== %d passed, %d failed ===", pass, fail))

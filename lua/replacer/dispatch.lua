@@ -107,8 +107,9 @@ end
 ---@param cfg RP_Config
 ---@param single_file boolean
 ---@param tally RP_DispatchTally
+---@param finish fun(reason: string, files?: integer, spots?: integer)
 ---@return fun(chosen: RP_Match[], replacement: string, write_changes: boolean, on_result?: fun(files: integer, spots: integer)): integer, integer
-local function make_applier(request, cfg, single_file, tally)
+local function make_applier(request, cfg, single_file, tally, finish)
   return function(chosen, replacement, write_changes, on_result)
     -- Soft LSP integration: try an LSP-driven rename first for eligible
     -- (identifier-shaped) matches; only whatever falls back goes through
@@ -151,7 +152,11 @@ local function make_applier(request, cfg, single_file, tally)
       end
     end
 
-    apply.apply_matches(to_apply, request.old, replacement, write_changes, cfg, settled)
+    -- a chunk that raised on a later tick ends the run as "error" (keeping what was written so far)
+    local function failed()
+      finish("error", tally.files, tally.spots)
+    end
+    apply.apply_matches(to_apply, request.old, replacement, write_changes, cfg, settled, failed)
     return final_files, final_spots
   end
 end
@@ -309,7 +314,7 @@ function M.dispatch(request, cfg, single_file, items, finish)
     finish(tally.spots > 0 and "applied" or "cancelled", tally.files, tally.spots)
   end
 
-  local apply_func = make_applier(request, cfg, single_file, tally)
+  local apply_func = make_applier(request, cfg, single_file, tally, finish)
   local open_picker = make_picker_opener(request, cfg, apply_func, finish, finish_applied)
 
   if request.all then

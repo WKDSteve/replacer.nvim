@@ -171,6 +171,22 @@ function M.run(request, new_text, scope, all)
   local cfg = effective_cfg(request)
   local finish = make_finish(request)
 
+  -- A callback of the run that raises after `run()` has returned (search end,
+  -- --changed lookup) would leave the run without an end: report it and end the
+  -- run as "error", so a waiting caller (:ReplaceBatch) goes on.
+  ---@generic F: function
+  ---@param fn F
+  ---@return F
+  local function guarded(fn)
+    return function(...)
+      local ok, err = xpcall(fn, debug.traceback, ...)
+      if not ok then
+        notify.error("run failed: " .. tostring(err))
+        finish("error")
+      end
+    end
+  end
+
   -- 1) Resolve scope (fall back to configured default when none was given).
   local scope_tok = (request.scope ~= "" and request.scope) or cfg.default_scope or "%"
   local roots, single_file = cmd_mod.resolve_scope(scope_tok)
@@ -187,7 +203,7 @@ function M.run(request, new_text, scope, all)
   local function collect(collect_roots, collect_single)
     -- 2) Collect matches asynchronously (ripgrep is non-blocking; vimgrep is sync),
     --    then 3) dispatch to plan / ALL / picker inside the callback.
-    local function on_collected(items, err)
+    local on_collected = guarded(function(items, err)
       if err then
         notify.error(require("replacer.error").format(err))
         finish("error")
@@ -211,7 +227,7 @@ function M.run(request, new_text, scope, all)
         items = kept
       end
       dispatch.dispatch(request, cfg, collect_single, items, finish)
-    end
+    end)
 
     if cfg.stream then
       -- --stream: incremental ripgrep parsing for smoother, filter-aware
@@ -230,40 +246,44 @@ function M.run(request, new_text, scope, all)
   if cfg._changed_only then
     local gitfiles = require("replacer.gitfiles")
     local start_dir = single_file and vim.fn.fnamemodify(roots[1], ":h") or roots[1]
-    gitfiles.list(start_dir, cfg._changed_only, function(files, top, failed_kinds)
-      if not top then
-        notify.warn("--changed: not inside a git repository")
-        finish("no_scope")
-        return
-      end
-      if failed_kinds then
-        notify.warn(
-          "--changed: git query failed for "
-            .. table.concat(failed_kinds, ", ")
-            .. " — results may be incomplete"
-        )
-      end
-      -- git always reports forward-slash paths regardless of OS; normalize
-      -- the scope prefix the same way before comparing (fnamemodify keeps
-      -- native backslashes on Windows).
-      local prefix = vim.fn.fnamemodify(roots[1], ":p"):gsub("\\", "/"):gsub("/+$", "")
-      local filtered = {}
-      for _, f in ipairs(files) do
-        if single_file then
-          if f == prefix then
+    gitfiles.list(
+      start_dir,
+      cfg._changed_only,
+      guarded(function(files, top, failed_kinds)
+        if not top then
+          notify.warn("--changed: not inside a git repository")
+          finish("no_scope")
+          return
+        end
+        if failed_kinds then
+          notify.warn(
+            "--changed: git query failed for "
+              .. table.concat(failed_kinds, ", ")
+              .. " — results may be incomplete"
+          )
+        end
+        -- git always reports forward-slash paths regardless of OS; normalize
+        -- the scope prefix the same way before comparing (fnamemodify keeps
+        -- native backslashes on Windows).
+        local prefix = vim.fn.fnamemodify(roots[1], ":p"):gsub("\\", "/"):gsub("/+$", "")
+        local filtered = {}
+        for _, f in ipairs(files) do
+          if single_file then
+            if f == prefix then
+              filtered[#filtered + 1] = f
+            end
+          elseif f == prefix or f:sub(1, #prefix + 1) == prefix .. "/" then
             filtered[#filtered + 1] = f
           end
-        elseif f == prefix or f:sub(1, #prefix + 1) == prefix .. "/" then
-          filtered[#filtered + 1] = f
         end
-      end
-      if #filtered == 0 then
-        notify.info("--changed: no changed files match the current scope")
-        finish("no_matches")
-        return
-      end
-      collect(filtered, false)
-    end)
+        if #filtered == 0 then
+          notify.info("--changed: no changed files match the current scope")
+          finish("no_matches")
+          return
+        end
+        collect(filtered, false)
+      end)
+    )
     return
   end
 

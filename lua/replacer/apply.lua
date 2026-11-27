@@ -351,9 +351,10 @@ end
 ---@param write_changes boolean
 ---@param cfg RP_Config|nil
 ---@param on_done? fun(files: integer, spots: integer, errors: RP_Error[])
+---@param on_error? fun(err: string) # A chunk raised: called instead of `on_done` (async path only).
 ---@return integer files, integer spots, RP_Error[] errors
 ---@see replacer.lsp_rename.try_rename_batch
-function M.apply_matches(items, old, new_text, write_changes, cfg, on_done)
+function M.apply_matches(items, old, new_text, write_changes, cfg, on_done, on_error)
   local by_path = group_by_path(items)
 
   ---@type string[]
@@ -407,6 +408,7 @@ function M.apply_matches(items, old, new_text, write_changes, cfg, on_done)
     or nil
   local total = #paths
   local i = 0
+  local run_step -- the guarded `step`, set below; later chunks are scheduled through it
 
   local function step()
     -- A user-requested cancel stops scheduling more work; whatever was already
@@ -429,7 +431,7 @@ function M.apply_matches(items, old, new_text, write_changes, cfg, on_done)
     end
 
     if i < total then
-      vim.schedule(step)
+      vim.schedule(run_step)
       return
     end
 
@@ -440,7 +442,27 @@ function M.apply_matches(items, old, new_text, write_changes, cfg, on_done)
     on_done(files, spots, errors)
   end
 
-  step()
+  -- A chunk that raises on a later tick would never reach `on_done`, and the run
+  -- would have no end: report it, close the indicator, and hand it to `on_error`
+  -- (or end with the totals so far when the caller gave none).
+  local function guarded_step()
+    local ok, err = xpcall(step, debug.traceback)
+    if ok then
+      return
+    end
+    if h then
+      pcall(h.finish, h, "failed")
+    end
+    notify.error("apply failed: " .. tostring(err))
+    if on_error then
+      on_error(err)
+    else
+      on_done(files, spots, errors)
+    end
+  end
+  run_step = guarded_step
+
+  guarded_step()
   return files, spots, errors -- best-effort snapshot; async callers use on_done
 end
 
